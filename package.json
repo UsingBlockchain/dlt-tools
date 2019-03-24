@@ -1,0 +1,57 @@
+{
+    "name": "nem2-business-tools",
+    "preferGlobal": true,
+    "version": "0.1.0",
+    "author": "Grégory Saive <greg@evias.be>",
+    "description": "Business Software Solution for the NEM2 Blockchain",
+    "license": "ApacheV2",
+    "engines": {
+        "node": ">=0.10"
+    },
+    "scripts": {
+        "pretest": "npm run build",
+        "test": "mocha --ui bdd --recursive ./build/test",
+        "build": "rm -rf build/ && tsc"
+    },
+    "dependencies": {
+        "chalk": "^2.3.0",
+        "cli-spinner": "^0.2.7",
+        "clime": "^0.5.9",
+        "nem2-library": "^0.9.12",
+        "nem2-sdk": "^0.11.1",
+        "js-sha3": "^0.7.0",
+        "crypto-js": "^3.1.9-1",
+        "rxjs": "^6.4.0"
+    },
+    "devDependencies": {
+        "@types/chai": "^4.0.4",
+        "@types/lodash": "^4.14.85",
+        "@types/mocha": "^2.2.44",
+        "@types/request": "^2.47.0",
+        "@types/request-promise-native": "^1.0.14",
+        "@types/utf8": "^2.1.6",
+        "@types/ws": "^3.2.0",
+        "@types/node": "latest",
+        "assert": "^1.4.1",
+        "chai": "^4.1.2",
+        "coveralls": "^3.0.0",
+        "mocha": "^4.0.1",
+        "nyc": "^11.3.0",
+        "ts-mockito": "^2.2.7",
+        "ts-node": "^5.0.1",
+        "tslint": "^5.8.0",
+        "typescript": "^2.5.3",
+        "typescript-require": "^0.2.9-1",
+        "path": "^0.12.7",
+        "readline-sync": "^1.4.9"
+    },
+    "main": "index.js",
+    "bin": {
+        "nem2-tools": "./bin/nem2-tools"
+    },
+    "bugs": "https://github.com/evias-services/nem2-business-tools/issues",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/evias-services/nem2-business-tools.git"
+    }
+}

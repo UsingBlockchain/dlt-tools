@@ -1,0 +1,14 @@
+{
+    "version": "v0.1.0",
+    "peers": [
+      "http://localhost:3000"
+    ],
+    "accounts": {
+      "tester1": "",
+      "tester2": "",
+      "tester3": "",
+      "tester4": "",
+      "tester5": ""
+    },
+    "disableMonitors": false
+  }
