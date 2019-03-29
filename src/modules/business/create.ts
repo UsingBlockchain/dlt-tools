@@ -41,6 +41,7 @@ import {
     MosaicAliasTransaction,
     AliasActionType,
     RegisterNamespaceTransaction,
+    NetworkCurrencyMosaic,
     Mosaic,
     EmptyMessage,
     TransferTransaction,
@@ -55,6 +56,7 @@ import {
 import {Action, BaseOptions} from '../../core/Action';
 import {IdentityRepository} from '../../core/repositories/IdentityRepository';
 import {IdentityService} from '../../core/services/IdentityService';
+import {Identity} from '../../core/models/Identity';
 
 export class NetworkValidator implements Validator<string> {
     validate(value: string, context: ValidationContext): void {
@@ -75,15 +77,9 @@ export class MosaicValidator implements Validator<string> {
 export class CommandOptions extends BaseOptions {
     @option({
         flag: 'n',
-        description: 'Identity name',
-    })
-    name: string;
-
-    @option({
-        flag: 'b',
         description: 'Business name',
     })
-    business: string;
+    name: string;
 
     @option({
         flag: 'c',
@@ -91,20 +87,6 @@ export class CommandOptions extends BaseOptions {
         validator: new NetworkValidator(),
     })
     network: string;
-
-    @option({
-        flag: 'l',
-        description: 'Create the identity only locally',
-        toggle: true
-    })
-    local: string;
-
-    @option({
-        flag: 'a',
-        description: 'Add assets to the created identity',
-        validator: new MosaicValidator(),
-    })
-    assets: string;
 
     getNetwork(network: string): NetworkType {
         if (network === 'MAIN_NET') {
@@ -122,7 +104,7 @@ export class CommandOptions extends BaseOptions {
 }
 
 @command({
-    description: 'Create named Identities for your Business.',
+    description: 'Create your Business with on-chain information.',
 })
 export default class extends Action {
     private readonly identityService: IdentityService;
@@ -141,129 +123,76 @@ export default class extends Action {
         // read parameters
         const {
             name,
-            business,
             networkType,
             local,
-            assets,
         } = this.readArguments(options);
 
-        const cleanBusiness = business.replace(/[^A-Za-z0-9\-_]+/g, '');
-        const prependName = 'business-' + cleanBusiness + '-' + name;
+        const cleanName = name.replace(/[^A-Za-z0-9\-_]+/g, '');
 
-        // get the previously created business identity
-        const businessIdentity = this.identityService.findIdentityByName('business-' + cleanBusiness);
+        // get the nemesis account
+        const nemesis = this.identityService.findIdentityByName('network.nemesis');
 
-        // create identity locally
-        const identityAccount = Account.generateNewAccount(networkType);
-        const identity = this.identityService.createNewIdentity(identityAccount, 'http://localhost:3000', prependName);
-
-        if (local === true && assets instanceof Mosaic) {
-            // local identity should still receive mosaics if any must be sent
-            const transferTx = this.getTransferTransaction(identityAccount.address, assets);
-
-            // send funds to identity and quit
-            const allTxes = [transferTx.toAggregate(businessIdentity.account.publicAccount)];
-            return await this.broadcastAggregateIdentityConfiguration(businessIdentity.account, [], allTxes);
+        let business: Identity;
+        try {
+            // get the previously created business identity
+            business = this.identityService.findIdentityByName('business-' + cleanName);
         }
-
-        // local identity and no funds sent
-        if (local === true) {
-            // print identity and quit
-            console.log('\n' + identity.toString() + '\n');
-            return false;
+        catch (e) {
+            // JiT creation of the business identity
+            const account = Account.generateNewAccount(networkType);
+            business = this.identityService.createNewIdentity(account, 'http://localhost:3000', 'business-' + cleanName);
         }
 
         //
         // identity will be defined on-chain with aliasing features
         //
+        const account = business.account;
+        const address = business.account.address;
 
         // add a block monitor
         this.monitor.monitorBlocks();
 
         // also add address monitors
-        this.monitor.monitorAddress(identityAccount.address.plain());
+        this.monitor.monitorAddress(address.plain());
 
         // build transactions
 
-        // STEP 1: send `cat.currency` to created account FROM the business identity
-        const transferTx = this.getTransferTransaction(identityAccount.address, assets);
-        const transferTxes = [transferTx.toAggregate(businessIdentity.account.publicAccount)];
+        // STEP 1: send `50'000'000 cat.currency` to business owner identity FROM nemesis account
+        const assets = NetworkCurrencyMosaic.createRelative(50000000);
+        const transferTx = this.getTransferTransaction(address, assets);
+        const transferTxes = [transferTx.toAggregate(nemesis.account.publicAccount)];
 
-        // STEP 2: register identities namespace(s)
-        const identityNamespace = cleanBusiness + ".identities." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
-        const nameNamespace = cleanBusiness + ".names." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
+        // STEP 2: register namespaces: business.identities and business.names
+        const identitiesNamespace = cleanName + ".identities";
+        const namesNamespace = cleanName + ".names";
 
         const namespaceTxes = await this.getCreateNamespaceTransactions(
-            businessIdentity.account.publicAccount,
-            identityNamespace
+            account.publicAccount,
+            identitiesNamespace
         );
 
-        const mosaicTxes = await this.getCreateNamespaceTransactions(
-            businessIdentity.account.publicAccount,
-            nameNamespace
+        const namesTxes = await this.getCreateNamespaceTransactions(
+            account.publicAccount,
+            namesNamespace
         );
 
-        // STEP 3.1: create MosaicDefinition transaction
-        //
-        // Each identity owns its custom asset with divisibility=0, supply=1
-        // and being non-transferable (named with subnamespace of business.names)
-        const mosaicDefinitionTx = this.getCreateMosaicTransaction(
-            businessIdentity.account.publicAccount,
-            0,
-            false,
-            false
-        );
-
-        // STEP 3.2: create MosaicSupplyChange transaction (supply=1)
-        const mosaicSupplyTx = this.getMosaicSupplyChangeTransaction(
-            mosaicDefinitionTx.mosaicId,
-            UInt64.fromUint(1) // identities have a supply of 1
-        );
-
-        // STEP 3.3: prepare mosaic definition for aggregate
-        const mosaicDefinitionTxes = [
-            mosaicDefinitionTx.toAggregate(businessIdentity.account.publicAccount),
-            mosaicSupplyTx.toAggregate(businessIdentity.account.publicAccount)
-        ];
-
-        // STEP 4: create MosaicAlias transaction to link lower level namespace to mosaic
-        const mosaicAliasTxes = this.getCreateMosaicAliasTransactions(
-            businessIdentity.account.publicAccount,
-            nameNamespace,
-            mosaicDefinitionTx.mosaicId
-        );
-
-        // STEP 5: link address with `identityNamespace`
-        const addressAliasTxes = this.getCreateAddressAliasTransactions(
-            businessIdentity.account.publicAccount,
-            identityNamespace,
-            identityAccount.address
-        );
-
-        // STEP 6: merge transactions and broadcast
+        // STEP 3: merge transactions and broadcast
         const allTxes = [].concat(
             transferTxes,
             namespaceTxes,
-            mosaicTxes,
-            mosaicDefinitionTxes,
-            mosaicAliasTxes,
-            addressAliasTxes
+            namesTxes,
         );
 
-        // STEP 7: send `business.names.name` to created account FROM the business identity
-        const asset = new Mosaic(new NamespaceId(nameNamespace), UInt64.fromUint(1));
-        const identityTransferTx = this.getTransferTransaction(identityAccount.address, asset);
-        allTxes.push(identityTransferTx.toAggregate(businessIdentity.account.publicAccount));
-
-        // STEP 8: retrieve cosigners and issuer account
-        const issuer: Account = businessIdentity.account;
+        // STEP 4: retrieve cosigners and issuer account
+        const issuer: Account = nemesis.account;
         const cosigners: Account[] = [];
+        cosigners.push(account); // `account` needed to cosign RegisterNamespace
 
-        // STEP 9: broadcast the aggregate transaction
-        return await this.broadcastAggregateIdentityConfiguration(issuer, cosigners, allTxes);
+        // STEP 5: broadcast the aggregate transaction
+        return await this.broadcastAggregateBusinessConfiguration(issuer, cosigners, allTxes);
     }
 
-    public async broadcastAggregateIdentityConfiguration(
+    public async broadcastAggregateBusinessConfiguration(
         issuer: Account,
         cosigners: Account[],
         configTransactions: Transaction[]
@@ -292,7 +221,7 @@ export default class extends Action {
             console.log('Signer: ', signedTransaction.signer);
         }, (err) => {
             let text = '';
-            text += 'broadcastAggregateIdentityConfiguration() - Error';
+            text += 'broadcastAggregateBusinessConfiguration() - Error';
             console.log(text, err.response !== undefined ? err.response.text : err);
         });
     }
@@ -374,101 +303,6 @@ export default class extends Action {
         return registerTx;
     }
 
-    public getCreateMosaicTransaction(
-        publicAccount: PublicAccount,
-        divisibility: number,
-        supplyMutable: boolean,
-        transferable: boolean
-    ): MosaicDefinitionTransaction
-    {
-        // create nonce and mosaicId
-        const nonce = MosaicNonce.createRandom();
-        const mosId = MosaicId.createFromNonce(nonce, publicAccount);
-        const props = {
-            supplyMutable: supplyMutable,
-            transferable: transferable,
-            levyMutable: false,
-            divisibility: divisibility,
-            duration: UInt64.fromUint(1000000), // 1'000'000 blocks
-        };
-
-        console.log('- Creating MosaicDefinitionTransaction with mosaicId: ' + JSON.stringify(mosId.id));
-        console.log('- Creating MosaicDefinitionTransaction with properties: ' + JSON.stringify(props));
-
-        const createTx = MosaicDefinitionTransaction.create(
-            Deadline.create(),
-            nonce,
-            mosId,
-            MosaicProperties.create(props),
-            NetworkType.MIJIN_TEST
-        );
-
-        return createTx;
-    }
-
-    public getMosaicSupplyChangeTransaction(
-        mosaicId: MosaicId,
-        initialSupply: UInt64
-    ): MosaicSupplyChangeTransaction
-    {
-        console.log('- Creating MosaicSupplyChangeTransaction with mosaicId: ' + JSON.stringify(mosaicId.id));
-        const supplyTx = MosaicSupplyChangeTransaction.create(
-            Deadline.create(),
-            mosaicId,
-            MosaicSupplyType.Increase,
-            initialSupply,
-            NetworkType.MIJIN_TEST
-        );
-
-        return supplyTx;
-    }
-
-    public getCreateMosaicAliasTransactions(
-        publicAccount: PublicAccount,
-        namespaceName: string,
-        mosaicId: MosaicId
-    ): Transaction[]
-    {
-        const namespaceId = new NamespaceId(namespaceName);
-        const actionType  = AliasActionType.Link;
-
-        console.log('- Creating MosaicAliasTransaction with namespace: ' + namespaceName);
-        const aliasTx = MosaicAliasTransaction.create(
-            Deadline.create(),
-            actionType,
-            namespaceId,
-            mosaicId,
-            NetworkType.MIJIN_TEST
-        );
-
-        return [
-            aliasTx.toAggregate(publicAccount),
-        ];
-    }
-
-    public getCreateAddressAliasTransactions(
-        publicAccount: PublicAccount,
-        namespaceName: string,
-        address: Address
-    ): Transaction[]
-    {
-        const namespaceId = new NamespaceId(namespaceName);
-        const actionType  = AliasActionType.Link;
-
-        console.log('- Creating AddressAliasTransaction with namespace: ' + namespaceName);
-        const aliasTx = AddressAliasTransaction.create(
-            Deadline.create(),
-            actionType,
-            namespaceId,
-            address,
-            NetworkType.MIJIN_TEST
-        );
-
-        return [
-            aliasTx.toAggregate(publicAccount),
-        ];
-    }
-
     public getTransferTransaction(
         recipient: Address | NamespaceId,
         assets: Mosaic
@@ -496,29 +330,14 @@ export default class extends Action {
             name = 'default';
         }
 
-        let business = OptionsResolver(options, 
-            'business',
-            () => { return ''; },
-            'Enter the business name: ');
-
         const networkType = options.getNetwork(OptionsResolver(options,
             'network',
             () => undefined,
             'Enter a network type (MIJIN_TEST, MIJIN, MAIN_NET, TEST_NET): '));
 
-        const local = readlineSync.keyInYN('Do you wish to keep this identity private ?');
-
-        const assets = MosaicOptionsResolver(options,
-            'assets',
-            () => { return ''; },
-            'Enter a mosaic amount to be sent (Ex.: 10000000 cat.currency)');
-
         return {
             name,
-            business,
             networkType,
-            local,
-            assets,
         };
     }
 }

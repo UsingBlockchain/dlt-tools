@@ -252,7 +252,7 @@ export default class extends AuthenticatedAction {
             registerTx = RegisterNamespaceTransaction.createRootNamespace(
                 Deadline.create(),
                 namespaceName,
-                UInt64.fromUint(100000), // 100'000 blocks
+                UInt64.fromUint(1000000), // 1'000'000 blocks = ~170 days with 15 second blocks
                 NetworkType.MIJIN_TEST
             );
         }
