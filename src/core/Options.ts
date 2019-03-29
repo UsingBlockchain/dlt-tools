@@ -107,10 +107,14 @@ export const MosaicOptionsResolver = (
     secondSource: () => string | undefined,
     promptText: string,
     readlineDependency?: any
-): MosaicId | NamespaceId | Mosaic => {
+): MosaicId | NamespaceId | Mosaic | boolean => {
     const readline = readlineDependency || readlineSync;
     const result = options[key] !== undefined ? options[key] : (secondSource() 
                 || readline.question(promptText));
+
+    if (! result.length) {
+        return false;
+    }
 
     // amount + mosaic name provided
     if (/[0-9]+ [0-9a-zA-Z\.\-_]+/.test(result)) {
@@ -163,7 +167,7 @@ export const AssetAmountOptionsResolver = (
     secondSource: () => string | undefined,
     promptText: string,
     readlineDependency?: any
-): MosaicId | NamespaceId | Mosaic | Asset => {
+): MosaicId | NamespaceId | Mosaic | Asset | boolean => {
     const readline = readlineDependency || readlineSync;
     const result = options[key] !== undefined ? options[key] : (secondSource() 
                 || readline.question(promptText));

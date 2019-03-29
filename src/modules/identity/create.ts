@@ -41,13 +41,16 @@ import {
     MosaicAliasTransaction,
     AliasActionType,
     RegisterNamespaceTransaction,
+    Mosaic,
+    EmptyMessage,
+    TransferTransaction,
 } from 'nem2-sdk';
 import * as readlineSync from 'readline-sync';
 
 // internal dependencies
 import {
     OptionsResolver,
-    UInt64OptionsResolver
+    MosaicOptionsResolver
 } from '../../core/Options';
 import {Action, BaseOptions} from '../../core/Action';
 import {IdentityRepository} from '../../core/repositories/IdentityRepository';
@@ -57,6 +60,14 @@ export class NetworkValidator implements Validator<string> {
     validate(value: string, context: ValidationContext): void {
         if (!(value === 'MIJIN' || value === 'MIJIN_TEST' || value === 'MAIN_NET' || value === 'TEST_NET')) {
             throw new ExpectedError('Please enter a valid network type');
+        }
+    }
+}
+
+export class MosaicValidator implements Validator<string> {
+    validate(value: string, context: ValidationContext): void {
+        if (! /[0-9]+ [0-9a-zA-Z\.\-_]+/.test(value)) {
+            throw new ExpectedError('Please enter a valid mosaic amount (Ex.: 1000 cat.currency)');
         }
     }
 }
@@ -77,10 +88,17 @@ export class CommandOptions extends BaseOptions {
 
     @option({
         flag: 'l',
-        description: 'Create the identity locally',
+        description: 'Create the identity only locally',
         toggle: true
     })
     local: string;
+
+    @option({
+        flag: 'a',
+        description: 'Add assets to the created identity',
+        validator: new MosaicValidator(),
+    })
+    assets: string;
 
     getNetwork(network: string): NetworkType {
         if (network === 'MAIN_NET') {
@@ -92,7 +110,8 @@ export class CommandOptions extends BaseOptions {
         } else if (network === 'MIJIN_TEST') {
             return NetworkType.MIJIN_TEST;
         }
-        throw new ExpectedError('Please enter a valid network type');
+
+        return NetworkType.MIJIN_TEST;
     }
 }
 
@@ -101,6 +120,7 @@ export class CommandOptions extends BaseOptions {
 })
 export default class extends Action {
     private readonly identityService: IdentityService;
+    private plannedNamespaces = [];
 
     constructor() {
         super();
@@ -117,13 +137,26 @@ export default class extends Action {
             name,
             networkType,
             local,
+            assets,
         } = this.readArguments(options);
+
+        // get the nemesis account
+        const nemesis = this.identityService.findIdentityByName('network.nemesis');
 
         // create identity locally
         const account = Account.generateNewAccount(networkType);
         const identity = this.identityService.createNewIdentity(account, 'http://localhost:3000', name);
 
-        // should the identity be kept private ?
+        if (local === true && assets instanceof Mosaic) {
+            // local identity should still receive mosaics if any must be sent
+            const transferTx = this.getTransferTransaction(account.address, assets);
+
+            // send funds to identity and quit
+            const allTxes = [transferTx.toAggregate(nemesis.account.publicAccount)];
+            return await this.broadcastAggregateIdentityConfiguration(nemesis.account, [], allTxes);
+        }
+
+        // local identity and no funds sent
         if (local === true) {
             // print identity and quit
             console.log('\n' + identity.toString() + '\n');
@@ -142,10 +175,14 @@ export default class extends Action {
 
         // build transactions
 
+        // STEP 1: send `cat.currency` to created account
+        const transferTx = this.getTransferTransaction(account.address, assets);
+        const transferTxes = [transferTx.toAggregate(nemesis.account.publicAccount)];
+
+        // STEP 2: register identities namespace(s)
         const identityNamespace = "business.identities." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
         const nameNamespace = "business.names." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
 
-        // STEP 1: register identities namespace(s)
         const namespaceTxes = await this.getCreateNamespaceTransactions(
             account.publicAccount,
             identityNamespace
@@ -156,7 +193,7 @@ export default class extends Action {
             nameNamespace
         );
 
-        // STEP 2.1: create MosaicDefinition transaction
+        // STEP 3.1: create MosaicDefinition transaction
         //
         // Each identity owns its custom asset with divisibility=0, supply=1
         // and being non-transferable (named with subnamespace of business.names)
@@ -167,41 +204,54 @@ export default class extends Action {
             false
         );
 
-        // STEP 2.2: create MosaicSupplyChange transaction (supply=1)
+        // STEP 3.2: create MosaicSupplyChange transaction (supply=1)
         const mosaicSupplyTx = this.getMosaicSupplyChangeTransaction(
             mosaicDefinitionTx.mosaicId,
             UInt64.fromUint(1) // identities have a supply of 1
         );
 
-        // STEP 2.3: prepare mosaic definition for aggregate
+        // STEP 3.3: prepare mosaic definition for aggregate
         const mosaicDefinitionTxes = [
             mosaicDefinitionTx.toAggregate(account.publicAccount),
             mosaicSupplyTx.toAggregate(account.publicAccount)
         ];
 
-        // STEP 3: create MosaicAlias transaction to link lower level namespace to mosaic
+        // STEP 4: create MosaicAlias transaction to link lower level namespace to mosaic
         const mosaicAliasTxes = this.getCreateMosaicAliasTransactions(
             account.publicAccount,
             nameNamespace,
             mosaicDefinitionTx.mosaicId
         );
 
-        // STEP 4: link address with `identityNamespace`
+        // STEP 5: link address with `identityNamespace`
         const addressAliasTxes = this.getCreateAddressAliasTransactions(
             account.publicAccount,
             identityNamespace,
             account.address
         );
 
-        //XXX send `cat.currency` to accounts
+        // STEP 6: merge transactions and broadcast
+        const allTxes = [].concat(
+            transferTxes,
+            namespaceTxes,
+            mosaicTxes,
+            mosaicDefinitionTxes,
+            mosaicAliasTxes,
+            addressAliasTxes
+        );
 
-        // STEP 5: merge transactions and broadcast
-        const allTxes = [].concat(namespaceTxes, mosaicDefinitionTxes, mosaicAliasTxes, addressAliasTxes);
-        return await this.broadcastAggregateMosaicConfiguration(account, allTxes);
+        // STEP 7: retrieve cosigners and issuer account
+        const issuer: Account = nemesis.account;
+        const cosigners: Account[] = [];
+        cosigners.push(account);
+
+        // STEP 8: broadcast the aggregate transaction
+        return await this.broadcastAggregateIdentityConfiguration(issuer, cosigners, allTxes);
     }
 
-    public async broadcastAggregateMosaicConfiguration(
-        account: Account,
+    public async broadcastAggregateIdentityConfiguration(
+        issuer: Account,
+        cosigners: Account[],
         configTransactions: Transaction[]
     ): Promise<Object> 
     {
@@ -212,7 +262,13 @@ export default class extends Action {
             []
         );
 
-        const signedTransaction = account.sign(aggregateTx);
+        // sign either with issuer + cosigners or only with issuer.
+        let signedTransaction;
+        if (cosigners.length) {
+            signedTransaction = issuer.signTransactionWithCosignatories(aggregateTx, cosigners);
+        } else {
+            signedTransaction = issuer.sign(aggregateTx);
+        }
 
         // announce/broadcast transaction
         const transactionHttp = new TransactionHttp(this.connector.peerUrl);
@@ -222,7 +278,7 @@ export default class extends Action {
             console.log('Signer: ', signedTransaction.signer);
         }, (err) => {
             let text = '';
-            text += 'broadcastAggregateMosaicConfiguration() - Error';
+            text += 'broadcastAggregateIdentityConfiguration() - Error';
             console.log(text, err.response !== undefined ? err.response.text : err);
         });
     }
@@ -257,6 +313,14 @@ export default class extends Action {
                     registerTxes.pop();
                 }
                 catch(e) {} // Do nothing, namespace "Error: Not Found"
+
+                if (this.plannedNamespaces.find((val) => { return val === fullName })) {
+                    // namespace creation already programmed
+                    registerTxes.pop();
+                } else {
+                    // register namespace creation to avoid multi creation of same namespace
+                    this.plannedNamespaces.push(fullName);
+                }
             }
 
             console.log("- Creating " + registerTxes.length + " RegisterNamespaceTransaction");
@@ -391,6 +455,23 @@ export default class extends Action {
         ];
     }
 
+    public getTransferTransaction(
+        recipient: Address | NamespaceId,
+        assets: Mosaic
+    ): TransferTransaction
+    {
+        console.log('- Creating TransferTransaction with Mosaic: ' + JSON.stringify(assets));
+        const transferTx = TransferTransaction.create(
+            Deadline.create(),
+            recipient,
+            [assets],
+            EmptyMessage,
+            NetworkType.MIJIN_TEST
+        );
+
+        return transferTx;
+    }
+
     public readArguments(options: CommandOptions): any {
         let name = OptionsResolver(options, 
             'name',
@@ -408,10 +489,16 @@ export default class extends Action {
 
         const local = readlineSync.keyInYN('Do you wish to keep this identity private ?');
 
+        const assets = MosaicOptionsResolver(options,
+            'assets',
+            () => { return ''; },
+            'Enter a mosaic amount to be sent (Ex.: 10000000 cat.currency)');
+
         return {
             name,
             networkType,
             local,
+            assets,
         };
     }
 }

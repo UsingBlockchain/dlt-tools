@@ -43,4 +43,8 @@ export class IdentityService {
         return this.identityRepository.all();
     }
 
+    removeIdentity(name: string): any {
+        return this.identityRepository.remove(name);
+    }
+
 }

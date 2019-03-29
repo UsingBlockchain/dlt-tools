@@ -63,6 +63,15 @@ export class IdentityRepository {
         return new Identity(account, account.address.networkType, url, name);
     }
 
+    public remove(name: string): any {
+        const identities = this.getIdentities();
+        if (identities.hasOwnProperty(name)) {
+            delete identities[name];
+        }
+
+        return this.saveIdentities(identities);
+    }
+
     private getIdentities(): any {
         let accounts = {};
         try {
