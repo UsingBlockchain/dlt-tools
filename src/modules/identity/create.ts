@@ -17,10 +17,12 @@
  */
 // third-party dependencies
 import chalk from 'chalk';
-import {command, ExpectedError, metadata, option} from 'clime';
+import {command, ExpectedError, metadata, option, ValidationContext, Validator} from 'clime';
 import {
     UInt64,
     Account,
+    Address,
+    AddressAliasTransaction,
     NetworkType,
     MosaicId,
     AccountHttp,
@@ -47,120 +49,154 @@ import {
     OptionsResolver,
     UInt64OptionsResolver
 } from '../../core/Options';
-import {AuthenticatedAction, IdentityOptions} from '../../core/AuthenticatedAction';
+import {Action, BaseOptions} from '../../core/Action';
+import {IdentityRepository} from '../../core/repositories/IdentityRepository';
+import {IdentityService} from '../../core/services/IdentityService';
 
-export class CommandOptions extends IdentityOptions {
+export class NetworkValidator implements Validator<string> {
+    validate(value: string, context: ValidationContext): void {
+        if (!(value === 'MIJIN' || value === 'MIJIN_TEST' || value === 'MAIN_NET' || value === 'TEST_NET')) {
+            throw new ExpectedError('Please enter a valid network type');
+        }
+    }
+}
+
+export class CommandOptions extends BaseOptions {
     @option({
         flag: 'n',
-        description: 'Asset name',
+        description: 'Identity name',
     })
     name: string;
+
     @option({
-        flag: 'd',
-        description: 'Divisibility [0, 6]',
+        flag: 'c',
+        description: 'Network Type: MAIN_NET, TEST_NET, MIJIN, MIJIN_TEST',
+        validator: new NetworkValidator(),
     })
-    divisibility: number;
-    @option({
-        flag: 's',
-        description: 'Mutable supply Mosaic [yes|No]',
-        toggle: true
-    })
-    supplyMutable: boolean;
-    @option({
-        flag: 't',
-        description: 'Transferable Mosaic [Yes|no]',
-        toggle: true
-    })
-    transferable: boolean;
+    network: string;
+
     @option({
         flag: 'l',
-        description: 'Mutable Levy Fee [yes|No]',
+        description: 'Create the identity locally',
         toggle: true
     })
-    levyMutable: boolean;
-    @option({
-        flag: 'i',
-        description: 'Initial supply (number|UInt64)',
-    })
-    initialSupply: string;
+    local: string;
+
+    getNetwork(network: string): NetworkType {
+        if (network === 'MAIN_NET') {
+            return NetworkType.MAIN_NET;
+        } else if (network === 'TEST_NET') {
+            return NetworkType.TEST_NET;
+        } else if (network === 'MIJIN') {
+            return NetworkType.MIJIN;
+        } else if (network === 'MIJIN_TEST') {
+            return NetworkType.MIJIN_TEST;
+        }
+        throw new ExpectedError('Please enter a valid network type');
+    }
 }
 
 @command({
-    description: 'Create named assets for your Business.',
+    description: 'Create named Identities for your Business.',
 })
-export default class extends AuthenticatedAction {
+export default class extends Action {
+    private readonly identityService: IdentityService;
 
     constructor() {
         super();
+
+        const identityRepository = new IdentityRepository('.nem2-business.json');
+        this.identityService = new IdentityService(identityRepository);
     }
 
     @metadata
     async execute(options: CommandOptions) 
     {
-        // read identity first
-        const identity = this.getIdentity(options);
-
         // read parameters
         const {
             name,
-            divisibility,
-            supplyMutable,
-            transferable,
-            levyMutable,
-            initialSupply,
+            networkType,
+            local,
         } = this.readArguments(options);
+
+        // create identity locally
+        const account = Account.generateNewAccount(networkType);
+        const identity = this.identityService.createNewIdentity(account, 'http://localhost:3000', name);
+
+        // should the identity be kept private ?
+        if (local === true) {
+            // print identity and quit
+            console.log('\n' + identity.toString() + '\n');
+            return false;
+        }
+
+        //
+        // identity will be defined on-chain with aliasing features
+        //
 
         // add a block monitor
         this.monitor.monitorBlocks();
 
         // also add address monitors
-        this.monitor.monitorAddress(identity.account.address.plain());
-
-        // shortcuts
-        const account = identity.account;
-        const address = identity.account.address;
-
-        // read account information
-        const accountHttp = new AccountHttp(this.connector.peerUrl);
-        const accountInfo = await accountHttp.getAccountInfo(address).toPromise();
+        this.monitor.monitorAddress(account.address.plain());
 
         // build transactions
 
-        // STEP 1: register namespace(s)
+        const identityNamespace = "business.identities." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
+        const nameNamespace = "business.names." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
+
+        // STEP 1: register identities namespace(s)
         const namespaceTxes = await this.getCreateNamespaceTransactions(
             account.publicAccount,
-            name
+            identityNamespace
+        );
+
+        const mosaicTxes = await this.getCreateNamespaceTransactions(
+            account.publicAccount,
+            nameNamespace
         );
 
         // STEP 2.1: create MosaicDefinition transaction
+        //
+        // Each identity owns its custom asset with divisibility=0, supply=1
+        // and being non-transferable (named with subnamespace of business.names)
         const mosaicDefinitionTx = this.getCreateMosaicTransaction(
             account.publicAccount,
-            divisibility,
-            supplyMutable,
-            transferable
+            0,
+            false,
+            false
         );
 
-        // STEP 2.2: create MosaicSupplyChange transaction
+        // STEP 2.2: create MosaicSupplyChange transaction (supply=1)
         const mosaicSupplyTx = this.getMosaicSupplyChangeTransaction(
             mosaicDefinitionTx.mosaicId,
-            initialSupply
+            UInt64.fromUint(1) // identities have a supply of 1
         );
 
-        // prepare mosaic definition for aggregate
+        // STEP 2.3: prepare mosaic definition for aggregate
         const mosaicDefinitionTxes = [
             mosaicDefinitionTx.toAggregate(account.publicAccount),
             mosaicSupplyTx.toAggregate(account.publicAccount)
         ];
 
         // STEP 3: create MosaicAlias transaction to link lower level namespace to mosaic
-        const aliasTxes = this.getCreateAliasTransactions(
+        const mosaicAliasTxes = this.getCreateMosaicAliasTransactions(
             account.publicAccount,
-            name,
+            nameNamespace,
             mosaicDefinitionTx.mosaicId
         );
 
-        // STEP 4: merge transactions and broadcast
-        const allTxes = [].concat(namespaceTxes, mosaicDefinitionTxes, aliasTxes);
+        // STEP 4: link address with `identityNamespace`
+        const addressAliasTxes = this.getCreateAddressAliasTransactions(
+            account.publicAccount,
+            identityNamespace,
+            account.address
+        );
+
+        //XXX send `cat.currency` to accounts
+
+        // STEP 5: merge transactions and broadcast
+        const allTxes = [].concat(namespaceTxes, mosaicDefinitionTxes, mosaicAliasTxes, addressAliasTxes);
         return await this.broadcastAggregateMosaicConfiguration(account, allTxes);
     }
 
@@ -223,7 +259,7 @@ export default class extends AuthenticatedAction {
                 catch(e) {} // Do nothing, namespace "Error: Not Found"
             }
 
-            console.log("Step 1) Creating " + registerTxes.length + " RegisterNamespaceTransaction");
+            console.log("- Creating " + registerTxes.length + " RegisterNamespaceTransaction");
             return resolve(registerTxes);
         });
     }
@@ -278,8 +314,8 @@ export default class extends AuthenticatedAction {
             duration: UInt64.fromUint(1000000), // 1'000'000 blocks
         };
 
-        console.log('Step 2.1) Creating MosaicDefinitionTransaction with mosaicId: ' + JSON.stringify(mosId.id));
-        console.log('Step 2.2) Creating MosaicDefinitionTransaction with properties: ' + JSON.stringify(props));
+        console.log('- Creating MosaicDefinitionTransaction with mosaicId: ' + JSON.stringify(mosId.id));
+        console.log('- Creating MosaicDefinitionTransaction with properties: ' + JSON.stringify(props));
 
         const createTx = MosaicDefinitionTransaction.create(
             Deadline.create(),
@@ -297,7 +333,7 @@ export default class extends AuthenticatedAction {
         initialSupply: UInt64
     ): MosaicSupplyChangeTransaction
     {
-        console.log('Step 2.1) Creating MosaicSupplyChangeTransaction with mosaicId: ' + JSON.stringify(mosaicId.id));
+        console.log('- Creating MosaicSupplyChangeTransaction with mosaicId: ' + JSON.stringify(mosaicId.id));
         const supplyTx = MosaicSupplyChangeTransaction.create(
             Deadline.create(),
             mosaicId,
@@ -309,7 +345,7 @@ export default class extends AuthenticatedAction {
         return supplyTx;
     }
 
-    public getCreateAliasTransactions(
+    public getCreateMosaicAliasTransactions(
         publicAccount: PublicAccount,
         namespaceName: string,
         mosaicId: MosaicId
@@ -318,7 +354,7 @@ export default class extends AuthenticatedAction {
         const namespaceId = new NamespaceId(namespaceName);
         const actionType  = AliasActionType.Link;
 
-        console.log('Step 3) Creating MosaicAliasTransaction with for namespace: ' + namespaceName);
+        console.log('- Creating MosaicAliasTransaction with namespace: ' + namespaceName);
         const aliasTx = MosaicAliasTransaction.create(
             Deadline.create(),
             actionType,
@@ -332,45 +368,50 @@ export default class extends AuthenticatedAction {
         ];
     }
 
+    public getCreateAddressAliasTransactions(
+        publicAccount: PublicAccount,
+        namespaceName: string,
+        address: Address
+    ): Transaction[]
+    {
+        const namespaceId = new NamespaceId(namespaceName);
+        const actionType  = AliasActionType.Link;
+
+        console.log('- Creating AddressAliasTransaction with namespace: ' + namespaceName);
+        const aliasTx = AddressAliasTransaction.create(
+            Deadline.create(),
+            actionType,
+            namespaceId,
+            address,
+            NetworkType.MIJIN_TEST
+        );
+
+        return [
+            aliasTx.toAggregate(publicAccount),
+        ];
+    }
+
     public readArguments(options: CommandOptions): any {
-        let name;
-        let divisibility;
-        let supplyMutable;
-        let transferable;
-        let levyMutable;
-        let initialSupply;
+        let name = OptionsResolver(options, 
+            'name',
+            () => { return ''; },
+            'Enter an identity name: ');
 
-        try {
-            name = OptionsResolver(options, 'name', () => { return ''; }, 'Enter an asset name: ');
-        } catch (err) { throw new ExpectedError('Please enter a valid mosaic name'); }
+        if (!name.length) {
+            name = 'default';
+        }
 
-        try {
-            divisibility = OptionsResolver(options, 'divisibility', () => { return ''; }, 'Enter a mosaic divisibility: ');
-        } catch (err) { throw new ExpectedError('Please enter a valid asset divisibility (0-6).'); }
+        const networkType = options.getNetwork(OptionsResolver(options,
+            'network',
+            () => undefined,
+            'Enter a network type (MIJIN_TEST, MIJIN, MAIN_NET, TEST_NET): '));
 
-        try {
-            supplyMutable = readlineSync.keyInYN('Should the supply be mutable ?');
-        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
-
-        try {
-            transferable = readlineSync.keyInYN('Should the asset be transferable?');
-        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
-
-        try {
-            levyMutable = readlineSync.keyInYN('Should the levy fee be mutable?');
-        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
-
-        try {
-            initialSupply = UInt64OptionsResolver(options, 'initialSupply', () => { return ''; }, 'Enter an initial supply: ');
-        } catch (err) { throw new ExpectedError('Please enter a valid initial supply.'); }
+        const local = readlineSync.keyInYN('Do you wish to keep this identity private ?');
 
         return {
             name,
-            divisibility,
-            supplyMutable,
-            transferable,
-            levyMutable,
-            initialSupply
+            networkType,
+            local,
         };
     }
 }

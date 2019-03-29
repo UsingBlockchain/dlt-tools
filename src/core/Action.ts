@@ -70,12 +70,6 @@ export abstract class Action extends Command {
     public readonly monitor;
 
     /**
-     * Accounts storage
-     * @var {Object}
-     */
-    private accounts = {};
-
-    /**
      * Construct an Action object
      * 
      * This will run the bootstrapper (configuration) and
@@ -99,51 +93,9 @@ export abstract class Action extends Command {
     }
 
     /**
-     * Get account by name (and network)
-     * 
-     * @param name          Account configuration name
-     * @param networkType   Network type
-     * @return {Account}
+     * Read command line arguments
+     * @param   options     The command line arguments
+     * @return {Object}
      */
-    public getAccount(
-        name: string,
-        networkType?: NetworkType
-    ): Account {
-        if (! this.config.accounts.hasOwnProperty(name)) {
-            throw new Error('Account with name "' + name + '" does not exist.');
-        }
-
-        // storage by network type
-        const network = networkType || NetworkType.MIJIN_TEST;
-
-        if (!this.accounts.hasOwnProperty(network)) {
-            this.accounts[network] = {};
-        }
-
-        // known_accounts
-        if (this.accounts[network].hasOwnProperty(name)) {
-            return this.accounts[network][name];
-        }
-
-        const privateKey = this.config.accounts[name].toUpperCase();
-        return this.accounts[network][name] = Account.createFromPrivateKey(
-            privateKey,
-            networkType || NetworkType.MIJIN_TEST
-        );
-    }
-
-    /**
-     * Get address by name (and network)
-     * 
-     * @param name          Account configuration name
-     * @param networkType   Network type
-     * @return {Account}
-     */
-    public getAddress(
-        name: string,
-        networkType?: NetworkType
-    ): Address {
-        const account = this.getAccount(name, networkType);
-        return account.address;
-    }
+    public abstract readArguments(options: BaseOptions): any;
 }

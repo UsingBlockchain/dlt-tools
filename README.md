@@ -30,7 +30,31 @@ Suitable documentation will be provided with the course of development. Followin
 
 This command line suite comes with a JSON configuration file in `config/app.json`. First versions of this tool will include private account information that will be removed from the configuration once the network setup scripts have been added.
 
-### Tool #1: Create assets with the Catapult engine
+### Tool #1: Import your private network's first Nemesis Account
+
+The following command will ask you to fill out some information about your *private network* and will then take care of importing the *first nemesis account* of your private network as an **identity** in your installation.
+
+This nemesis account reader currently **only works with [catapult-service-bootstrap](https://github.com/nemtech/catapult-service-bootstrap) and is meant to read your locally running private chain network.
+
+```bash
+$ ./bin/nem2-tools network import
+```
+
+### Tool #2: Create new Identities for your Business
+
+The following command will ask you to fill out some information about your *identity* and will then take care of creating namespaces, aliases and sending initial funds to the identity's account.
+
+```bash
+$ ./bin/nem2-tools identity create -n "your-named-identity"
+```
+
+You can also create an identity **only locally** without adding namespaces and aliases on-chain:
+
+```bash
+$ ./bin/nem2-tools identity create --name "your-named-identity" --local
+```
+
+### Tool #3: Create named assets with the Catapult engine
 
 The following command will ask you to fill out some information about your *asset* and will then take care of creating your home-baked crypto currency on your private blockchain network.
 
@@ -38,10 +62,19 @@ The following command will ask you to fill out some information about your *asse
 $ ./bin/nem2-tools assets create
 ```
 
+### Tool #4: Register namespaces with the Catapult engine
+
+The following command will ask you to fill out the name of your *namespace* and will then take care of registering your namespace for a said duration in your private blockchain network.
+
+```bash
+$ ./bin/nem2-tools names create
+```
+
 ## Changelog
 
 Important versions listed below. Refer to the [Changelog](CHANGELOG.md) for a full history of the project.
 
+- [0.2.0](CHANGELOG.md#v020) - 2019-03-29
 - [0.1.0](CHANGELOG.md#v010) - 2019-03-24
 
 ## License
