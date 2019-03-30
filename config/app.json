@@ -3,5 +3,6 @@
     "peers": [
       "http://localhost:3000"
     ],
-    "disableMonitors": false
+    "disableMonitors": false,
+    "storageFile": ".nem2-business.json"
   }

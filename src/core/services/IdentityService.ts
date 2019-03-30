@@ -17,6 +17,7 @@
  */
 import {Account} from 'nem2-sdk';
 import {Identity} from '../models/Identity';
+import {Scope} from '../models/Scope';
 import {IdentityRepository} from '../repositories/IdentityRepository';
 
 /**
@@ -31,16 +32,21 @@ export class IdentityService {
         this.identityRepository = identityRepository;
     }
 
-    createNewIdentity(account: Account, url: string, name: string): Identity {
-        return this.identityRepository.save(account, url, name);
+    createNewIdentity(account: Account, url: string, scope: string, name: string): Identity {
+        return this.identityRepository.save(account, url, scope, name);
     }
 
-    findIdentityByName(name: string): Identity {
-        return this.identityRepository.find(name);
+    findScope(scope: string): Scope {
+        const identities = this.findAll(scope);
+        return new Scope(scope, identities);
     }
 
-    findAll(): Identity[] {
-        return this.identityRepository.all();
+    findIdentityByScopeAndName(scope: string, name: string): Identity {
+        return this.identityRepository.find(scope, name);
+    }
+
+    findAll(scope: string = 'default'): Identity[] {
+        return this.identityRepository.all(scope);
     }
 
     removeIdentity(name: string): any {

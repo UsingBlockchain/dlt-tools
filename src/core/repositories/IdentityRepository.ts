@@ -31,42 +31,59 @@ export class IdentityRepository {
 
     }
 
-    public find(name: string): Identity {
+    public find(scope: string, name: string): Identity {
         const identities = this.getIdentities();
-        if (identities[name]) {
+        const slug = scope + '.' + name;
+        if (identities[slug]) {
             return new Identity(
-                Account.createFromPrivateKey(identities[name].privateKey, identities[name].networkType),
-                identities[name].networkType,
-                identities[name].url,
+                Account.createFromPrivateKey(identities[slug].privateKey, identities[slug].networkType),
+                identities[slug].networkType,
+                identities[slug].url,
+                identities[slug].scope,
                 name);
         }
-        throw new Error(`${name} not found`);
+
+        throw new Error(`Identity with scope '${scope}' and name '${name}' not found`);
     }
 
-    public all(): Identity[] {
+    public all(scope: string): Identity[] {
         const identities = this.getIdentities();
         const list: Identity[] = [];
         for (const name in identities) {
+
+            // scope-limited queries
+            if (scope !== '*' && identities[name].scope !== scope) {
+                continue;
+            }
+
             list.push(new Identity(
                 Account.createFromPrivateKey(identities[name].privateKey, identities[name].networkType),
                 identities[name].networkType,
                 identities[name].url,
+                identities[name].scope,
                 name));
         }
         return list;
     }
 
-    public save(account: Account, url: string, name: string): Identity {
+    public save(account: Account, url: string, scope: string, name: string): Identity {
+        const slug = scope + '.' + name;
         const identities = this.getIdentities();
-        identities[name] = {privateKey: account.privateKey, networkType: account.address.networkType, url};
+        identities[slug] = {
+            scope: scope,
+            name: name,
+            privateKey: account.privateKey,
+            networkType: account.address.networkType,
+            url
+        };
         this.saveIdentities(identities);
-        return new Identity(account, account.address.networkType, url, name);
+        return new Identity(account, account.address.networkType, url, scope, name);
     }
 
-    public remove(name: string): any {
+    public remove(slug: string): any {
         const identities = this.getIdentities();
-        if (identities.hasOwnProperty(name)) {
-            delete identities[name];
+        if (identities.hasOwnProperty(slug)) {
+            delete identities[slug];
         }
 
         return this.saveIdentities(identities);
@@ -74,15 +91,19 @@ export class IdentityRepository {
 
     private getIdentities(): any {
         let accounts = {};
+        const configPath = require('os').homedir() + '/' + this.fileUrl;
         try {
-            accounts = JSON.parse(fs.readFileSync(require('os').homedir() + '/' + this.fileUrl, 'utf-8') as string);
+            // read file content
+            accounts = JSON.parse(fs.readFileSync(configPath, 'utf-8') as string);
         } catch (err) {
-            fs.writeFileSync(require('os').homedir() + '/' + this.fileUrl, '{}', 'utf-8');
+            // file does not exist
+            fs.writeFileSync(configPath, '{}', 'utf-8');
         }
         return accounts;
     }
 
     private saveIdentities(identities: JSON) {
-        fs.writeFileSync(require('os').homedir() + '/' + this.fileUrl, JSON.stringify(identities), 'utf-8');
+        const configPath = require('os').homedir() + '/' + this.fileUrl;
+        fs.writeFileSync(configPath, JSON.stringify(identities), 'utf-8');
     }
 }

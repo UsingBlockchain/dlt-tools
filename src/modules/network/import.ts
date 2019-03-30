@@ -84,7 +84,7 @@ export default class extends Action {
     constructor() {
         super();
 
-        const identityRepository = new IdentityRepository('.nem2-business.json');
+        const identityRepository = new IdentityRepository(this.config.storageFile);
         this.identityService = new IdentityService(identityRepository);
     }
 
@@ -103,7 +103,7 @@ export default class extends Action {
         this.catapultService = new CatapultService(boostrapRepository);
 
         try {
-            const identity = this.identityService.findIdentityByName('network.nemesis');
+            const identity = this.identityService.findIdentityByScopeAndName('default', 'network.nemesis');
 
             // print identity and quit (already imported)
             console.log('\n' + identity.toString() + '\n');
@@ -113,7 +113,7 @@ export default class extends Action {
 
         // read the first nemesis account
         const nemesisAccount = this.catapultService.getNemesisAccount();
-        const identity = this.identityService.createNewIdentity(nemesisAccount, url, 'network.nemesis');
+        const identity = this.identityService.createNewIdentity(nemesisAccount, url, 'default', 'network.nemesis');
 
         // print identity and quit
         console.log('\n' + identity.toString() + '\n');

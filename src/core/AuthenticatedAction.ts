@@ -43,21 +43,42 @@ export abstract class AuthenticatedAction extends Action {
     }
 
     /**
+     * Get an identity by name. If the `--scope` options is set,
+     * a scoped identity will be returned.
      * 
      * @param options
      */
     public getIdentity(options: IdentityOptions): Identity {
         const identityName = options.identity ? options.identity : 'default';
+        const scopeName = this.getScope(options);
+
         try {
-            return this.identityService.findIdentityByName(identityName);
+            const identity = this.identityService.findIdentityByScopeAndName(scopeName, identityName);
+            return identity;
         } catch (err) {
-            throw new ExpectedError(options.identity ? ('No identity found with name: ' + options.identity) :
+            throw new ExpectedError(options.identity ? ('No identity found with scope: ' + scopeName + ' and name: ' + identityName) :
                 'To start using the nem2-tools suite, create a default identity using: nem2-tools identity create');
         }
+    }
+
+    /**
+     * Get a `--scope` cleaned name.
+     * 
+     * @param options
+     */
+    public getScope(options: IdentityOptions): string {
+        const scope = options.scope || 'default';
+        return scope.replace(/[^A-Za-z0-9\-_]+/g, '');
     }
 }
 
 export class IdentityOptions extends Options {
+    @option({
+        flag: 's',
+        description: 'Scope name',
+    })
+    scope: string;
+
     @option({
         flag: 'i',
         description: 'Select between your identities, by providing a name',

@@ -3,7 +3,9 @@
 ## v0.2.0
 
 - Added `nem2-tools network import` nemesis reader, currently compatible only with `catapult-service-bootstrap`
-- Added `nem2-tools identity create` to handle identities within scope of the project
+- Added `nem2-tools business create` to create business scopes
+- Added `nem2-tools business reader --business "..."`
+- Added `nem2-tools identity create` to handle identities within scope of a business
 - Added `core/services/IdentityService`
 - Added `core/services/CatapultService` currently compatible only with `catapult-service-bootstrap`
 - Added `core/repositories/IdentityRepository`

@@ -55,29 +55,34 @@ export class CommandOptions extends IdentityOptions {
         description: 'Asset name',
     })
     name: string;
+
     @option({
         flag: 'd',
         description: 'Divisibility [0, 6]',
     })
     divisibility: number;
+
     @option({
         flag: 's',
         description: 'Mutable supply Mosaic [yes|No]',
         toggle: true
     })
     supplyMutable: boolean;
+
     @option({
         flag: 't',
         description: 'Transferable Mosaic [Yes|no]',
         toggle: true
     })
     transferable: boolean;
+
     @option({
         flag: 'l',
         description: 'Mutable Levy Fee [yes|No]',
         toggle: true
     })
     levyMutable: boolean;
+
     @option({
         flag: 'i',
         description: 'Initial supply (number|UInt64)',
@@ -99,6 +104,7 @@ export default class extends AuthenticatedAction {
     {
         // read identity first
         const identity = this.getIdentity(options);
+        const scope = this.getScope(options);
 
         // read parameters
         const {

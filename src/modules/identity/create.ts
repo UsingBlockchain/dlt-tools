@@ -80,10 +80,10 @@ export class CommandOptions extends BaseOptions {
     name: string;
 
     @option({
-        flag: 'b',
-        description: 'Business name',
+        flag: 's',
+        description: 'Scope name',
     })
-    business: string;
+    scope: string;
 
     @option({
         flag: 'c',
@@ -122,7 +122,7 @@ export class CommandOptions extends BaseOptions {
 }
 
 @command({
-    description: 'Create named Identities for your Business.',
+    description: 'Create named Identities for your Scope.',
 })
 export default class extends Action {
     private readonly identityService: IdentityService;
@@ -131,7 +131,7 @@ export default class extends Action {
     constructor() {
         super();
 
-        const identityRepository = new IdentityRepository('.nem2-business.json');
+        const identityRepository = new IdentityRepository(this.config.storageFile);
         this.identityService = new IdentityService(identityRepository);
     }
 
@@ -141,29 +141,29 @@ export default class extends Action {
         // read parameters
         const {
             name,
-            business,
+            scopeName,
             networkType,
             local,
             assets,
         } = this.readArguments(options);
 
-        const cleanBusiness = business.replace(/[^A-Za-z0-9\-_]+/g, '');
-        const prependName = 'business-' + cleanBusiness + '-' + name;
+        const cleanScope = scopeName.replace(/[^A-Za-z0-9\-_]+/g, '');
+        const cleanName = name.replace(/[^A-Za-z0-9\-_]+/g, '');
 
-        // get the previously created business identity
-        const businessIdentity = this.identityService.findIdentityByName('business-' + cleanBusiness);
+        // get the previously created scope owner identity
+        const ownerIdentity = this.identityService.findIdentityByScopeAndName(cleanScope, 'owner');
 
-        // create identity locally
+        // create scoped identity locally
         const identityAccount = Account.generateNewAccount(networkType);
-        const identity = this.identityService.createNewIdentity(identityAccount, 'http://localhost:3000', prependName);
+        const identity = this.identityService.createNewIdentity(identityAccount, 'http://localhost:3000', cleanScope, cleanName);
 
         if (local === true && assets instanceof Mosaic) {
             // local identity should still receive mosaics if any must be sent
             const transferTx = this.getTransferTransaction(identityAccount.address, assets);
 
             // send funds to identity and quit
-            const allTxes = [transferTx.toAggregate(businessIdentity.account.publicAccount)];
-            return await this.broadcastAggregateIdentityConfiguration(businessIdentity.account, [], allTxes);
+            const allTxes = [transferTx.toAggregate(ownerIdentity.account.publicAccount)];
+            return await this.broadcastAggregateIdentityConfiguration(ownerIdentity.account, [], allTxes);
         }
 
         // local identity and no funds sent
@@ -187,19 +187,19 @@ export default class extends Action {
 
         // STEP 1: send `cat.currency` to created account FROM the business identity
         const transferTx = this.getTransferTransaction(identityAccount.address, assets);
-        const transferTxes = [transferTx.toAggregate(businessIdentity.account.publicAccount)];
+        const transferTxes = [transferTx.toAggregate(ownerIdentity.account.publicAccount)];
 
         // STEP 2: register identities namespace(s)
-        const identityNamespace = cleanBusiness + ".identities." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
-        const nameNamespace = cleanBusiness + ".names." + name.replace(/[^A-Za-z0-9\-_]+/g, '');
+        const identityNamespace = cleanScope + ".identities." + cleanName;
+        const nameNamespace = cleanScope + ".names." + cleanName;
 
         const namespaceTxes = await this.getCreateNamespaceTransactions(
-            businessIdentity.account.publicAccount,
+            ownerIdentity.account.publicAccount,
             identityNamespace
         );
 
         const mosaicTxes = await this.getCreateNamespaceTransactions(
-            businessIdentity.account.publicAccount,
+            ownerIdentity.account.publicAccount,
             nameNamespace
         );
 
@@ -208,7 +208,7 @@ export default class extends Action {
         // Each identity owns its custom asset with divisibility=0, supply=1
         // and being non-transferable (named with subnamespace of business.names)
         const mosaicDefinitionTx = this.getCreateMosaicTransaction(
-            businessIdentity.account.publicAccount,
+            ownerIdentity.account.publicAccount,
             0,
             false,
             false
@@ -222,20 +222,20 @@ export default class extends Action {
 
         // STEP 3.3: prepare mosaic definition for aggregate
         const mosaicDefinitionTxes = [
-            mosaicDefinitionTx.toAggregate(businessIdentity.account.publicAccount),
-            mosaicSupplyTx.toAggregate(businessIdentity.account.publicAccount)
+            mosaicDefinitionTx.toAggregate(ownerIdentity.account.publicAccount),
+            mosaicSupplyTx.toAggregate(ownerIdentity.account.publicAccount)
         ];
 
         // STEP 4: create MosaicAlias transaction to link lower level namespace to mosaic
         const mosaicAliasTxes = this.getCreateMosaicAliasTransactions(
-            businessIdentity.account.publicAccount,
+            ownerIdentity.account.publicAccount,
             nameNamespace,
             mosaicDefinitionTx.mosaicId
         );
 
         // STEP 5: link address with `identityNamespace`
         const addressAliasTxes = this.getCreateAddressAliasTransactions(
-            businessIdentity.account.publicAccount,
+            ownerIdentity.account.publicAccount,
             identityNamespace,
             identityAccount.address
         );
@@ -253,10 +253,10 @@ export default class extends Action {
         // STEP 7: send `business.names.name` to created account FROM the business identity
         const asset = new Mosaic(new NamespaceId(nameNamespace), UInt64.fromUint(1));
         const identityTransferTx = this.getTransferTransaction(identityAccount.address, asset);
-        allTxes.push(identityTransferTx.toAggregate(businessIdentity.account.publicAccount));
+        allTxes.push(identityTransferTx.toAggregate(ownerIdentity.account.publicAccount));
 
         // STEP 8: retrieve cosigners and issuer account
-        const issuer: Account = businessIdentity.account;
+        const issuer: Account = ownerIdentity.account;
         const cosigners: Account[] = [];
 
         // STEP 9: broadcast the aggregate transaction
@@ -496,10 +496,10 @@ export default class extends Action {
             name = 'default';
         }
 
-        let business = OptionsResolver(options, 
-            'business',
+        let scopeName = OptionsResolver(options, 
+            'scope',
             () => { return ''; },
-            'Enter the business name: ');
+            'Enter the scope name: ');
 
         const networkType = options.getNetwork(OptionsResolver(options,
             'network',
@@ -515,7 +515,7 @@ export default class extends Action {
 
         return {
             name,
-            business,
+            scopeName,
             networkType,
             local,
             assets,

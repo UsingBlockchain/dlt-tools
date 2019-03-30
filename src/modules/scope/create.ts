@@ -77,7 +77,7 @@ export class MosaicValidator implements Validator<string> {
 export class CommandOptions extends BaseOptions {
     @option({
         flag: 'n',
-        description: 'Business name',
+        description: 'Scope name',
     })
     name: string;
 
@@ -104,7 +104,7 @@ export class CommandOptions extends BaseOptions {
 }
 
 @command({
-    description: 'Create your Business with on-chain information.',
+    description: 'Create your Scope with on-chain information.',
 })
 export default class extends Action {
     private readonly identityService: IdentityService;
@@ -113,7 +113,7 @@ export default class extends Action {
     constructor() {
         super();
 
-        const identityRepository = new IdentityRepository('.nem2-business.json');
+        const identityRepository = new IdentityRepository(this.config.storageFile);
         this.identityService = new IdentityService(identityRepository);
     }
 
@@ -124,30 +124,29 @@ export default class extends Action {
         const {
             name,
             networkType,
-            local,
         } = this.readArguments(options);
 
         const cleanName = name.replace(/[^A-Za-z0-9\-_]+/g, '');
 
         // get the nemesis account
-        const nemesis = this.identityService.findIdentityByName('network.nemesis');
+        const nemesis = this.identityService.findIdentityByScopeAndName('default', 'network.nemesis');
 
-        let business: Identity;
+        let scope: Identity;
         try {
-            // get the previously created business identity
-            business = this.identityService.findIdentityByName('business-' + cleanName);
+            // get the previously created scope identity
+            scope = this.identityService.findIdentityByScopeAndName(cleanName, 'owner');
         }
         catch (e) {
-            // JiT creation of the business identity
+            // JiT creation of the scope identity
             const account = Account.generateNewAccount(networkType);
-            business = this.identityService.createNewIdentity(account, 'http://localhost:3000', 'business-' + cleanName);
+            scope = this.identityService.createNewIdentity(account, 'http://localhost:3000', cleanName, 'owner');
         }
 
         //
         // identity will be defined on-chain with aliasing features
         //
-        const account = business.account;
-        const address = business.account.address;
+        const account = scope.account;
+        const address = scope.account.address;
 
         // add a block monitor
         this.monitor.monitorBlocks();

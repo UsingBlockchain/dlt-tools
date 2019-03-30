@@ -16,7 +16,7 @@
  * @copyright  (c) 2015-2019, eVias Services
  */
 // third party deps
-import {Command, command, metadata, option, Options} from 'clime';
+import {Command, command, metadata, option, Options, ExpectedError} from 'clime';
 
 // internal deps
 import {
@@ -29,21 +29,27 @@ import {IdentityService} from '../../core/services/IdentityService';
 export class CommandOptions extends Options {
     @option({
         flag: 'n',
-        description: 'name',
+        description: 'Identity name',
     })
     name: string;
+
+    @option({
+        flag: 's',
+        description: 'Scope name',
+    })
+    scope: string;
 }
 
 @command({
     description: 'Remove an identity by name',
 })
 
-export default class extends Command {
+export default class extends Action {
     private readonly identityService: IdentityService;
 
     constructor() {
         super();
-        const identityRepository = new IdentityRepository('.nem2-business.json');
+        const identityRepository = new IdentityRepository(this.config.storageFile);
         this.identityService = new IdentityService(identityRepository);
     }
 
@@ -53,15 +59,16 @@ export default class extends Command {
         // read parameters
         const {
             name,
+            scopeName,
         } = this.readArguments(options);
 
-        // get the nemesis account
-        const identity = this.identityService.findIdentityByName(name);
+        // retrieve the identity
+        const identity = this.identityService.findIdentityByScopeAndName(scopeName, name);
 
         // remove the identity
-        this.identityService.removeIdentity(name);
+        this.identityService.removeIdentity(identity.getSlug());
 
-        console.log('Identity ' + name + ' removed successfully.');
+        console.log('Identity ' + identity.getSlug() + ' removed successfully.');
     }
 
     public readArguments(options: CommandOptions): any {
@@ -71,11 +78,21 @@ export default class extends Command {
             'Enter an identity name: ');
 
         if (!name.length) {
-            name = 'default';
+            throw new ExpectedError('Please specify an identity name.');
+        }
+
+        let scopeName = OptionsResolver(options, 
+            'scope',
+            () => { return ''; },
+            'Enter the scope name: ');
+
+        if (!scopeName.length) {
+            throw new ExpectedError('Please specify a scope name.');
         }
 
         return {
             name,
+            scopeName,
         };
     }
 }

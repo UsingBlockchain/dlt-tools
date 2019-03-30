@@ -19,26 +19,48 @@ import {Account, NetworkType} from 'nem2-sdk';
 
 /**
  * Class `Identity` describes an account and is linked to a network
- * as well as to a peer host.
+ * as well as to a peer host and is grouped in a `scope`.
  * 
  * @since 0.2.0
  */
 export class Identity {
+    /**
+     * Automatically field slug for the identity
+     * @var {string}
+     */
+    private slug: string;
 
-    constructor(public readonly account: Account,
+    constructor(/**
+                 * Linked account
+                 * @var {Account}
+                 */
+                public readonly account: Account,
+                /**
+                 * Network type
+                 * @var {NetworkType}
+                 */
                 public readonly networkType: NetworkType,
+                /**
+                 * Peer URL
+                 * @var {string}
+                 */
                 public readonly url: string,
-                public readonly name: string) {
+                /**
+                 * Scope of the identity
+                 * @var {string}
+                 */
+                public readonly scope: string,
+                /**
+                 * Name of the identity
+                 * @var {string}
+                 */
+                public readonly name: string,) {
 
+        // automatically set the slug (ID) of the identity
+        this.slug = scope + '.' + name;
     }
 
-    toString(): string {
-        return this.name + '-> \n\tNetwork:\t' + NetworkType[this.networkType]
-        + '\n\tName:\t\t' + (this.name || 'default')
-        + '\n\tUrl:\t\t' + this.url
-        + '\n\tAddress:\t' + this.account.address.plain()
-        + '\n\tPublicKey:\t' + this.account.publicKey
-        + '\n\tPrivateKey:\t' + this.account.privateKey
-        + '\n';
+    getSlug(): string {
+        return this.slug;
     }
 }
