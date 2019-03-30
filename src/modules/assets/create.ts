@@ -39,6 +39,10 @@ import {
     MosaicAliasTransaction,
     AliasActionType,
     RegisterNamespaceTransaction,
+    Mosaic,
+    Address,
+    TransferTransaction,
+    EmptyMessage,
 } from 'nem2-sdk';
 import * as readlineSync from 'readline-sync';
 
@@ -103,8 +107,8 @@ export default class extends AuthenticatedAction {
     async execute(options: CommandOptions) 
     {
         // read identity first
-        const identity = this.getIdentity(options);
-        const scope = this.getScope(options);
+        const userIdentity = this.getIdentity(options);
+        const ownerIdentity = this.identityService.findIdentityByScopeAndName(userIdentity.scope, 'owner');
 
         // read parameters
         const {
@@ -120,27 +124,23 @@ export default class extends AuthenticatedAction {
         this.monitor.monitorBlocks();
 
         // also add address monitors
-        this.monitor.monitorAddress(identity.account.address.plain());
+        this.monitor.monitorAddress(ownerIdentity.account.address.plain());
 
         // shortcuts
-        const account = identity.account;
-        const address = identity.account.address;
-
-        // read account information
-        const accountHttp = new AccountHttp(this.connector.peerUrl);
-        const accountInfo = await accountHttp.getAccountInfo(address).toPromise();
+        const userAccount = userIdentity.account;
+        const userAddress = userIdentity.account.address;
 
         // build transactions
 
         // STEP 1: register namespace(s)
         const namespaceTxes = await this.getCreateNamespaceTransactions(
-            account.publicAccount,
+            ownerIdentity.account.publicAccount,
             name
         );
 
         // STEP 2.1: create MosaicDefinition transaction
         const mosaicDefinitionTx = this.getCreateMosaicTransaction(
-            account.publicAccount,
+            ownerIdentity.account.publicAccount,
             divisibility,
             supplyMutable,
             transferable
@@ -154,24 +154,35 @@ export default class extends AuthenticatedAction {
 
         // prepare mosaic definition for aggregate
         const mosaicDefinitionTxes = [
-            mosaicDefinitionTx.toAggregate(account.publicAccount),
-            mosaicSupplyTx.toAggregate(account.publicAccount)
+            mosaicDefinitionTx.toAggregate(ownerIdentity.account.publicAccount),
+            mosaicSupplyTx.toAggregate(ownerIdentity.account.publicAccount)
         ];
 
         // STEP 3: create MosaicAlias transaction to link lower level namespace to mosaic
         const aliasTxes = this.getCreateAliasTransactions(
-            account.publicAccount,
+            ownerIdentity.account.publicAccount,
             name,
             mosaicDefinitionTx.mosaicId
         );
 
-        // STEP 4: merge transactions and broadcast
-        const allTxes = [].concat(namespaceTxes, mosaicDefinitionTxes, aliasTxes);
-        return await this.broadcastAggregateMosaicConfiguration(account, allTxes);
+        // STEP 4: send created mosaic to specified identity FROM owner identity
+        const asset = new Mosaic(new NamespaceId(name), initialSupply);
+        const transferTx = this.getTransferTransaction(userAccount.address, asset);
+        const transferTxes = [transferTx.toAggregate(ownerIdentity.account.publicAccount)];
+
+        // STEP 5: merge transactions
+        const allTxes = [].concat(namespaceTxes, mosaicDefinitionTxes, aliasTxes, transferTxes);
+
+        // STEP 6: retrieve cosigners and issuer account
+        const issuer: Account = ownerIdentity.account;
+        const cosigners: Account[] = [];
+
+        return await this.broadcastAggregateMosaicConfiguration(issuer, cosigners, allTxes);
     }
 
     public async broadcastAggregateMosaicConfiguration(
-        account: Account,
+        issuer: Account,
+        cosigners: Account[],
         configTransactions: Transaction[]
     ): Promise<Object> 
     {
@@ -182,8 +193,13 @@ export default class extends AuthenticatedAction {
             []
         );
 
-        const signedTransaction = account.sign(aggregateTx);
-
+        // sign either with issuer + cosigners or only with issuer.
+        let signedTransaction;
+        if (cosigners.length) {
+            signedTransaction = issuer.signTransactionWithCosignatories(aggregateTx, cosigners);
+        } else {
+            signedTransaction = issuer.sign(aggregateTx);
+        }
         // announce/broadcast transaction
         const transactionHttp = new TransactionHttp(this.connector.peerUrl);
         return transactionHttp.announce(signedTransaction).subscribe(() => {
@@ -336,6 +352,23 @@ export default class extends AuthenticatedAction {
         return [
             aliasTx.toAggregate(publicAccount),
         ];
+    }
+
+    public getTransferTransaction(
+        recipient: Address | NamespaceId,
+        assets: Mosaic
+    ): TransferTransaction
+    {
+        console.log('- Creating TransferTransaction with Mosaic: ' + JSON.stringify(assets));
+        const transferTx = TransferTransaction.create(
+            Deadline.create(),
+            recipient,
+            [assets],
+            EmptyMessage,
+            NetworkType.MIJIN_TEST
+        );
+
+        return transferTx;
     }
 
     public readArguments(options: CommandOptions): any {

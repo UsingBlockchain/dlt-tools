@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v0.3.0
+
+- Refactoring to use Scoped Identities
+- Added `core/models/Scope` for grouping Identities by scope
+- Renamed `business` to `scope`
+
 ## v0.2.0
 
 - Added `nem2-tools network import` nemesis reader, currently compatible only with `catapult-service-bootstrap`

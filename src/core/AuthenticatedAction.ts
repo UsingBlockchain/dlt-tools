@@ -33,12 +33,12 @@ export abstract class AuthenticatedAction extends Action {
     /**
      * 
      */
-    private readonly identityService: IdentityService;
+    protected readonly identityService: IdentityService;
 
     constructor() {
         super();
 
-        const identityRepository = new IdentityRepository('.nem2-tools.identities.json');
+        const identityRepository = new IdentityRepository(this.config.storageFile);
         this.identityService = new IdentityService(identityRepository);
     }
 
@@ -56,6 +56,7 @@ export abstract class AuthenticatedAction extends Action {
             const identity = this.identityService.findIdentityByScopeAndName(scopeName, identityName);
             return identity;
         } catch (err) {
+            console.log(err);
             throw new ExpectedError(options.identity ? ('No identity found with scope: ' + scopeName + ' and name: ' + identityName) :
                 'To start using the nem2-tools suite, create a default identity using: nem2-tools identity create');
         }

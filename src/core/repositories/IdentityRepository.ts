@@ -40,7 +40,8 @@ export class IdentityRepository {
                 identities[slug].networkType,
                 identities[slug].url,
                 identities[slug].scope,
-                name);
+                identities[slug].name
+            );
         }
 
         throw new Error(`Identity with scope '${scope}' and name '${name}' not found`);
@@ -49,19 +50,20 @@ export class IdentityRepository {
     public all(scope: string): Identity[] {
         const identities = this.getIdentities();
         const list: Identity[] = [];
-        for (const name in identities) {
+        for (const slug in identities) {
 
             // scope-limited queries
-            if (scope !== '*' && identities[name].scope !== scope) {
+            if (scope !== '*' && identities[slug].scope !== scope) {
                 continue;
             }
 
             list.push(new Identity(
-                Account.createFromPrivateKey(identities[name].privateKey, identities[name].networkType),
-                identities[name].networkType,
-                identities[name].url,
-                identities[name].scope,
-                name));
+                Account.createFromPrivateKey(identities[slug].privateKey, identities[slug].networkType),
+                identities[slug].networkType,
+                identities[slug].url,
+                identities[slug].scope,
+                identities[slug].name
+            ));
         }
         return list;
     }

@@ -129,7 +129,7 @@ export default class extends Action {
         const cleanName = name.replace(/[^A-Za-z0-9\-_]+/g, '');
 
         // get the nemesis account
-        const nemesis = this.identityService.findIdentityByScopeAndName('default', 'network.nemesis');
+        const nemesis = this.identityService.findIdentityByScopeAndName('network', 'nemesis0');
 
         let scope: Identity;
         try {

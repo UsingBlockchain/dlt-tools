@@ -59,6 +59,12 @@ export class CommandOptions extends BaseOptions {
     })
     url: string;
 
+    @option({
+        flag: 'i',
+        description: 'Enter a nemesis account index (0-19): ',
+    })
+    index: string;
+
     getNetwork(network: string): NetworkType {
         if (network === 'MAIN_NET') {
             return NetworkType.MAIN_NET;
@@ -96,6 +102,7 @@ export default class extends Action {
             path,
             networkType,
             url,
+            index,
         } = this.readArguments(options);
 
         // initialize catapult-service-bootstrap installation reader
@@ -103,20 +110,20 @@ export default class extends Action {
         this.catapultService = new CatapultService(boostrapRepository);
 
         try {
-            const identity = this.identityService.findIdentityByScopeAndName('default', 'network.nemesis');
+            const identity = this.identityService.findIdentityByScopeAndName('network', 'nemesis' + index);
 
             // print identity and quit (already imported)
-            console.log('\n' + identity.toString() + '\n');
+            console.log('\nIdentity network.nemesis0 already imported' + '\n');
             return ;
         }
-        catch(e) {} // identity `network.nemesis` does not exist yet
+        catch(e) {} // identity `nemesis0` does not exist yet
 
         // read the first nemesis account
-        const nemesisAccount = this.catapultService.getNemesisAccount();
-        const identity = this.identityService.createNewIdentity(nemesisAccount, url, 'default', 'network.nemesis');
+        const nemesisAccount = this.catapultService.getNemesisAccount(index);
+        const identity = this.identityService.createNewIdentity(nemesisAccount, url, 'network', 'nemesis' + index);
 
         // print identity and quit
-        console.log('\n' + identity.toString() + '\n');
+        console.log('\nIdentity network.nemesis' + index + ' imported successfully' + '\n');
         return ;
     }
 
@@ -139,11 +146,23 @@ export default class extends Action {
         if (!url.length) {
              url = 'http://localhost:3000';
         }
+
+        let index = OptionsResolver(options,
+            'index',
+            () => undefined,
+            'Enter the nemesis account index (Default 0): ');
+
+        if (! index.length) {
+            index = '0';
+        }
+
+        index = parseInt(index);
     
         return {
             path,
             networkType,
             url,
+            index,
         };
     }
 }

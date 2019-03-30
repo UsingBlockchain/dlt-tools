@@ -66,10 +66,10 @@ export default class extends Action {
         } = this.readArguments(options);
 
         let identities: Identity[] = [];
-        if (! scopeName.length || scopeName === '*') {
+        if ((! scopeName.length || scopeName === '*') && !name.length) {
             // wildcard scopes
             identities = this.identityService.findAll('*');
-        } else if (name.length) {
+        } else if (scopeName.length && name.length) {
             // filter by identity name
             identities = [this.identityService.findIdentityByScopeAndName(scopeName, name)];
         } else {
@@ -78,6 +78,13 @@ export default class extends Action {
         }
 
         let message = '\n';
+
+        if (! identities.length) {
+            message += 'No identities found.';
+            console.log(message);
+            return ;
+        }
+
         identities.map((identity) => {
 
             message += chalk.green(identity.getSlug()) + '-> '
@@ -99,10 +106,6 @@ export default class extends Action {
             'name',
             () => { return ''; },
             'Enter an identity name (Leave empty for any): ');
-
-        if (!name.length) {
-            name = 'default';
-        }
 
         let scopeName = OptionsResolver(options, 
             'scope',

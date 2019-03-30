@@ -74,6 +74,7 @@ $ ./bin/nem2-tools names create
 
 Important versions listed below. Refer to the [Changelog](CHANGELOG.md) for a full history of the project.
 
+- [0.3.0](CHANGELOG.md#v030) - 
 - [0.2.0](CHANGELOG.md#v020) - 2019-03-29
 - [0.1.0](CHANGELOG.md#v010) - 2019-03-24
 

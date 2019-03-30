@@ -181,7 +181,7 @@ export default class extends Action {
         this.monitor.monitorBlocks();
 
         // also add address monitors
-        this.monitor.monitorAddress(identityAccount.address.plain());
+        this.monitor.monitorAddress(ownerIdentity.account.address.plain());
 
         // build transactions
 
