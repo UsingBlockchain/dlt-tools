@@ -92,6 +92,31 @@ export class CommandOptions extends IdentityOptions {
         description: 'Initial supply (number|UInt64)',
     })
     initialSupply: string;
+
+    // @option({
+    //     flag: 'f',
+    //     description: 'Set Levy Fee [yes|No]',
+    //     toggle: true
+    // })
+    // hasLevy: boolean;
+
+    // @option({
+    //     flag: 'm',
+    //     description: 'Levy Mosaic Id',
+    // })
+    // levyMosaicId: string;
+
+    // @option({
+    //     flag: 'v',
+    //     description: 'Levy Type',
+    // })
+    // levyType: number;
+
+    // @option({
+    //     flag: 'a',
+    //     description: 'Levy Amount',
+    // })
+    // levyAmount: string;
 }
 
 @command({
@@ -118,6 +143,10 @@ export default class extends AuthenticatedAction {
             transferable,
             levyMutable,
             initialSupply,
+            // hasLevy,
+            // levyMosaicId,
+            // levyType,
+            // levyAmount,
         } = this.readArguments(options);
 
         // add a block monitor
@@ -377,6 +406,10 @@ export default class extends AuthenticatedAction {
         let supplyMutable;
         let transferable;
         let levyMutable;
+        let hasLevy;
+        let levyMosaicId;
+        let levyType;
+        let levyAmount;
         let initialSupply;
 
         try {
@@ -388,20 +421,39 @@ export default class extends AuthenticatedAction {
         } catch (err) { throw new ExpectedError('Please enter a valid asset divisibility (0-6).'); }
 
         try {
-            supplyMutable = readlineSync.keyInYN('Should the supply be mutable ?');
-        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
-
-        try {
-            transferable = readlineSync.keyInYN('Should the asset be transferable?');
-        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
-
-        try {
-            levyMutable = readlineSync.keyInYN('Should the levy fee be mutable?');
-        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
-
-        try {
             initialSupply = UInt64OptionsResolver(options, 'initialSupply', () => { return ''; }, 'Enter an initial supply: ');
         } catch (err) { throw new ExpectedError('Please enter a valid initial supply.'); }
+
+        try {
+            supplyMutable = readlineSync.keyInYN('Should the supply be mutable ? ');
+        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the supply should be mutable.'); }
+
+        try {
+            transferable = readlineSync.keyInYN('Should the asset be transferable? ');
+        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the asset should be transferable.'); }
+
+        try {
+            levyMutable = readlineSync.keyInYN('Should the levy fee be mutable? ');
+        } catch (err) { throw new ExpectedError('Please enter Yes or No for whether the levy fee should be mutable.'); }
+
+        // try {
+        //     hasLevy = readlineSync.keyInYN('Should the asset include a Levy Fee? ');
+        // } catch (err) { throw new ExpectedError('Please enter Yes or No for whether there should be a levy fee.'); }
+
+        // if (hasLevy === true) {
+
+        //     try {
+        //         levyMosaicId = UInt64OptionsResolver(options, 'levyMosaicId', () => { return ''; }, 'Enter a levy fee Mosaic Id: ');
+        //     } catch (err) { throw new ExpectedError('Please enter a valid levy fee mosaicId.'); }
+
+        //     try {
+        //         levyType = OptionsResolver(options, 'levyType', () => { return ''; }, 'Enter a Levy Type (0: Absolute | 1: Percentile): ');
+        //     } catch (err) { throw new ExpectedError('Please enter a valid asset levyType (0-1).'); }
+
+        //     try {
+        //         levyAmount = UInt64OptionsResolver(options, 'levyAmount', () => { return ''; }, 'Enter a levy fee Amount: ');
+        //     } catch (err) { throw new ExpectedError('Please enter a valid levy fee amount.'); }
+        // }
 
         return {
             name,
@@ -409,7 +461,11 @@ export default class extends AuthenticatedAction {
             supplyMutable,
             transferable,
             levyMutable,
-            initialSupply
+            initialSupply,
+            // hasLevy,
+            // levyMosaicId,
+            // levyType,
+            // levyAmount,
         };
     }
 }
